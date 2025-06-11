@@ -75,7 +75,7 @@ done
 
 if [[ "$crontabs" == "y" ]]; then
     # حذف کرونجاب‌های قبلی مرتبط با بکاپ
-    sudo crontab -l | grep -vE '/root/ac-backup.+\.sh' | crontab -
+    sudo crontab -l | grep -vE '/root/ac-backup.+\.sh' | sudo crontab -
 fi
 
 # نصب zip اگر موجود نبود
@@ -184,7 +184,7 @@ EOF
     n)  # marzneshin backup
         ACLover="marzneshin backup"
 
-        if dir=$(find /etc/opt /var/lib -type d -iname "marzneshin" -print -quit); then
+        if dir=$(find /etc/opt /var/lib /var/lib -type d -iname "marzneshin" -print -quit); then
             echo "Marzneshin folder found at $dir"
         else
             echo "Marzneshin folder not found."
@@ -194,7 +194,7 @@ EOF
         if [ -d "/var/lib/marzneshin/mysql" ]; then
             sed -i -e 's/\s*=\s*/=/' -e 's/\s*:\s*/:/' -e 's/^\s*//' /etc/opt/marzneshin/.env
 
-            docker exec marzneshin-mysql-1 bash -c "mkdir -p /var/lib/mysql/db-backup"
+            docker exec marzneshin-db-1 bash -c "mkdir -p /var/lib/mysql/db-backup"
             source /etc/opt/marzneshin/.env
 
             cat > "/var/lib/marzneshin/mysql/ac-backup.sh" <<EOL
@@ -224,28 +224,54 @@ EOF
         ;;
 
     *)
-        echo "Please choose one of x, m, h, or n only!"
+        echo "Invalid option"
         exit 1
         ;;
 esac
 
-caption="${caption}\n\n${ACLover}\n<code>${IP}</code>\nCreated by @Pv_VEnZo - https://github.com/My-VEnZo/backup"
-comment=$(echo -e "$caption" | sed 's/<code>//g;s/<\/code>//g')
-comment=$(trim "$comment")
+echo "Running backup for $ACLover"
 
-# ساخت اسکریپت اصلی بکاپ
-cat > "/root/ac-backup-${xmh}.sh" <<EOL
+# ایجاد اسکریپت بکاپ
+case "$xmh" in
+    m)
+        cat > /root/ac-backup-m.sh <<EOF
 #!/bin/bash
-rm -f /root/ac-backup-${xmh}.zip
 $ZIP
-echo -e "$comment"
-curl -s "https://api.telegram.org/bot$tk/sendDocument" -F chat_id=$chatid -F document="@/root/ac-backup-${xmh}.zip" -F caption="$caption" -F parse_mode="HTML"
-rm -f /root/ac-backup-${xmh}.zip
-EOL
+curl -s -X POST https://api.telegram.org/bot$tk/sendDocument -F chat_id=$chatid -F document=@/root/ac-backup-m.zip -F caption="$caption - $IP"
+EOF
+        chmod +x /root/ac-backup-m.sh
+        BACKUP_SCRIPT="/root/ac-backup-m.sh"
+        ;;
+    x)
+        cat > /root/ac-backup-x.sh <<EOF
+#!/bin/bash
+$ZIP
+curl -s -X POST https://api.telegram.org/bot$tk/sendDocument -F chat_id=$chatid -F document=@/root/ac-backup-x.zip -F caption="$caption - $IP"
+EOF
+        chmod +x /root/ac-backup-x.sh
+        BACKUP_SCRIPT="/root/ac-backup-x.sh"
+        ;;
+    h)
+        cat > /root/ac-backup-h.sh <<EOF
+#!/bin/bash
+$ZIP
+curl -s -X POST https://api.telegram.org/bot$tk/sendDocument -F chat_id=$chatid -F document=@/root/ac-backup-h.zip -F caption="$caption - $IP"
+EOF
+        chmod +x /root/ac-backup-h.sh
+        BACKUP_SCRIPT="/root/ac-backup-h.sh"
+        ;;
+    n)
+        cat > /root/ac-backup-n.sh <<EOF
+#!/bin/bash
+$ZIP
+curl -s -X POST https://api.telegram.org/bot$tk/sendDocument -F chat_id=$chatid -F document=@/root/ac-backup-n.zip -F caption="$caption - $IP"
+EOF
+        chmod +x /root/ac-backup-n.sh
+        BACKUP_SCRIPT="/root/ac-backup-n.sh"
+        ;;
+esac
 
-chmod +x "/root/ac-backup-${xmh}.sh"
+# اضافه کردن کرونجاب
+(crontab -l 2>/dev/null; echo "$cron_time $BACKUP_SCRIPT") | crontab -
 
-# تنظیم کرونجاب
-(crontab -l 2>/dev/null; echo "$cron_time /root/ac-backup-${xmh}.sh") | crontab -
-
-echo "Cronjob set for $cron_time to run /root/ac-backup-${xmh}.sh"
+echo "Cronjob set for $cron_time to run $BACKUP_SCRIPT"
