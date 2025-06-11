@@ -1,141 +1,173 @@
 #!/bin/bash
 
-# گرفتن توکن ربات تلگرام
+# گرفتن توکن ربات
 while [[ -z "$tk" ]]; do
     echo "Bot token: "
     read -r tk
+    if [[ $tk == $'\0' ]]; then
+        echo "Invalid input. Token cannot be empty."
+        unset tk
+    fi
 done
 
 # گرفتن Chat ID
 while [[ -z "$chatid" ]]; do
     echo "Chat id: "
     read -r chatid
-done
-
-# گرفتن عنوان کپشن فایل بکاپ
-echo "Caption (مثلا نام دامنه یا توضیح): "
-read -r caption
-
-# گرفتن زمان کرونجاب (دقیقه و ساعت)
-while true; do
-    echo "Cronjob (minutes hours) (مثلا: 30 6 یا 0 12): "
-    read -r minute hour
-    if [[ $minute == 0 && $hour == 0 ]]; then
-        cron_time="* * * * *"
-        break
-    elif [[ $minute == 0 && $hour =~ ^[0-9]+$ && $hour -lt 24 ]]; then
-        cron_time="0 */${hour} * * *"
-        break
-    elif [[ $hour == 0 && $minute =~ ^[0-9]+$ && $minute -lt 60 ]]; then
-        cron_time="*/${minute} * * * *"
-        break
-    elif [[ $minute =~ ^[0-9]+$ && $hour =~ ^[0-9]+$ && $hour -lt 24 && $minute -lt 60 ]]; then
-        cron_time="${minute} ${hour} * * *"
-        break
-    else
-        echo "فرمت کرونجاب اشتباه است، دوباره وارد کنید."
+    if [[ $chatid == $'\0' ]]; then
+        echo "Invalid input. Chat id cannot be empty."
+        unset chatid
+    elif [[ ! $chatid =~ ^\-?[0-9]+$ ]]; then
+        echo "${chatid} is not a number."
+        unset chatid
     fi
 done
 
-# گرفتن نام پنل (x-ui, marzban, hiddify, marzneshin)
+# گرفتن عنوان برای کپشن
+echo "Caption (for example, your domain, to identify the database file more easily): "
+read -r caption
+
+# گرفتن زمان کرونجاب
+while true; do
+    echo "Cronjob (minutes and hours) (e.g : 30 6 or 0 12) : "
+    read -r minute hour
+    if [[ $minute == 0 ]] && [[ $hour == 0 ]]; then
+        cron_time="* * * * *"
+        break
+    elif [[ $minute == 0 ]] && [[ $hour =~ ^[0-9]+$ ]] && [[ $hour -lt 24 ]]; then
+        cron_time="0 */${hour} * * *"
+        break
+    elif [[ $hour == 0 ]] && [[ $minute =~ ^[0-9]+$ ]] && [[ $minute -lt 60 ]]; then
+        cron_time="*/${minute} * * * *"
+        break
+    elif [[ $minute =~ ^[0-9]+$ ]] && [[ $hour =~ ^[0-9]+$ ]] && [[ $hour -lt 24 ]] && [[ $minute -lt 60 ]]; then
+        cron_time="${minute} ${hour} * * *"
+        break
+    else
+        echo "Invalid input, please enter a valid cronjob format (minutes and hours, e.g: 0 6 or 30 12)"
+    fi
+done
+
+# انتخاب نوع پنل بکاپ
 while [[ -z "$xmh" ]]; do
-    echo "کدام پنل؟ [x] X-UI, [m] Marzban, [h] Hiddify, [n] Marzneshin : "
+    echo "Choose backup panel: x-ui, marzban, hiddify, or marzneshin? [x/m/h/n] : "
     read -r xmh
-    if [[ ! "$xmh" =~ ^[xmh n]$ ]]; then
-        echo "فقط یکی از حروف x, m, h, n را وارد کنید."
+    if [[ $xmh == $'\0' ]]; then
+        echo "Invalid input. Please choose x, m, h or n."
+        unset xmh
+    elif [[ ! $xmh =~ ^[xmhn]$ ]]; then
+        echo "${xmh} is not a valid option. Please choose x, m, h or n."
         unset xmh
     fi
 done
 
-# پاک کردن کرونجاب‌های قبلی مربوط به این اسکریپت
 while [[ -z "$crontabs" ]]; do
-    echo "می‌خواهید کرونجاب‌های قبلی پاک شود؟ [y/n]: "
+    echo "Would you like the previous crontabs to be cleared? [y/n] : "
     read -r crontabs
-    if [[ ! "$crontabs" =~ ^[yn]$ ]]; then
-        echo "فقط y یا n را وارد کنید."
+    if [[ $crontabs == $'\0' ]]; then
+        echo "Invalid input. Please choose y or n."
+        unset crontabs
+    elif [[ ! $crontabs =~ ^[yn]$ ]]; then
+        echo "${crontabs} is not a valid option. Please choose y or n."
         unset crontabs
     fi
 done
 
 if [[ "$crontabs" == "y" ]]; then
-    sudo crontab -l | grep -vE '/root/ac-backup.+\.sh' | sudo crontab -
+    # حذف کرونجاب‌های قبلی مرتبط با بکاپ
+    sudo crontab -l | grep -vE '/root/ac-backup.+\.sh' | crontab -
 fi
 
-# نصب zip اگر نبود
-sudo apt install zip -y
+# نصب zip اگر موجود نبود
+sudo apt-get update
+sudo apt-get install zip -y
 
-# شروع ساخت بکاپ با توجه به پنل انتخاب شده
-if [[ "$xmh" == "m" ]]; then
-    # Marzban
-    if dir=$(find /opt /root -type d -iname "marzban" -print -quit); then
-        echo "پوشه Marzban در $dir یافت شد."
-    else
-        echo "پوشه Marzban یافت نشد."
-        exit 1
-    fi
+# گرفتن آی‌پی سرور
+IP=$(ip route get 1 | sed -n 's/^.*src \([0-9.]*\) .*$/\1/p')
 
-    if [ -d "/var/lib/marzban/mysql" ]; then
-        sed -i -e 's/\s*=\s*/=/' -e 's/\s*:\s*/:/' -e 's/^\s*//' /opt/marzban/.env
-        source /opt/marzban/.env
+trim() {
+    # حذف فضای خالی ابتدا و انتها
+    local var="$*"
+    var="${var#"${var%%[![:space:]]*}"}"
+    var="${var%"${var##*[![:space:]]}"}"
+    echo -n "$var"
+}
 
-        docker exec marzban-mysql-1 bash -c "mkdir -p /var/lib/mysql/db-backup"
-        cat > "/var/lib/marzban/mysql/ac-backup.sh" <<EOL
+case "$xmh" in
+    m)  # marzban backup
+        ACLover="marzban backup"
+
+        if dir=$(find /opt /root -type d -iname "marzban" -print -quit); then
+            echo "Marzban folder found at $dir"
+        else
+            echo "Marzban folder not found."
+            exit 1
+        fi
+
+        if [ -d "/var/lib/marzban/mysql" ]; then
+            sed -i -e 's/\s*=\s*/=/' -e 's/\s*:\s*/:/' -e 's/^\s*//' /opt/marzban/.env
+
+            docker exec marzban-mysql-1 bash -c "mkdir -p /var/lib/mysql/db-backup"
+            source /opt/marzban/.env
+
+            cat > "/var/lib/marzban/mysql/ac-backup.sh" <<EOL
 #!/bin/bash
 USER="root"
 PASSWORD="$MYSQL_ROOT_PASSWORD"
 databases=\$(mysql -h 127.0.0.1 --user=\$USER --password=\$PASSWORD -e "SHOW DATABASES;" | tr -d "| " | grep -v Database)
 for db in \$databases; do
-    if [[ "\$db" != "information_schema" ]] && [[ "\$db" != "mysql" ]] && [[ "\$db" != "performance_schema" ]] && [[ "\$db" != "sys" ]]; then
+    if [[ "\$db" != "information_schema" ]] && [[ "\$db" != "mysql" ]] && [[ "\$db" != "performance_schema" ]] && [[ "\$db" != "sys" ]] ; then
         echo "Dumping database: \$db"
         mysqldump -h 127.0.0.1 --force --opt --user=\$USER --password=\$PASSWORD --databases \$db > /var/lib/mysql/db-backup/\$db.sql
     fi
 done
 EOL
-        chmod +x /var/lib/marzban/mysql/ac-backup.sh
+            chmod +x /var/lib/marzban/mysql/ac-backup.sh
 
-        ZIP=$(cat <<EOF
+            ZIP=$(cat <<EOF
 docker exec marzban-mysql-1 bash -c "/var/lib/mysql/ac-backup.sh"
-zip -r /root/ac-backup-m.zip /opt/marzban/* /var/lib/marzban/* /opt/marzban/.env -x /var/lib/marzban/mysql/*
+zip -r /root/ac-backup-m.zip /opt/marzban/* /var/lib/marzban/* /opt/marzban/.env -x /var/lib/marzban/mysql/\*
 zip -r /root/ac-backup-m.zip /var/lib/marzban/mysql/db-backup/*
 rm -rf /var/lib/marzban/mysql/db-backup/*
 EOF
 )
-    else
-        ZIP="zip -r /root/ac-backup-m.zip ${dir}/* /var/lib/marzban/* /opt/marzban/.env"
-    fi
-
-    ACLover="Marzban Backup"
-
-elif [[ "$xmh" == "x" ]]; then
-    # X-UI
-    if dbDir=$(find /etc /opt/freedom -type d -iname "x-ui*" -print -quit); then
-        echo "پوشه دیتابیس X-UI در $dbDir یافت شد."
-        if [[ $dbDir == *"/opt/freedom/x-ui"* ]]; then
-            dbDir="${dbDir}/db/"
+        else
+            ZIP="zip -r /root/ac-backup-m.zip ${dir}/* /var/lib/marzban/* /opt/marzban/.env"
         fi
-    else
-        echo "پوشه دیتابیس X-UI یافت نشد."
-        exit 1
-    fi
+        ;;
 
-    if configDir=$(find /usr/local -type d -iname "x-ui*" -print -quit); then
-        echo "پوشه کانفیگ X-UI در $configDir یافت شد."
-    else
-        echo "پوشه کانفیگ X-UI یافت نشد."
-        exit 1
-    fi
+    x)  # x-ui backup
+        ACLover="x-ui backup"
 
-    ZIP="zip /root/ac-backup-x.zip ${dbDir}/x-ui.db ${configDir}/config.json"
-    ACLover="X-UI Backup"
+        if dbDir=$(find /etc /opt/freedom -type d -iname "x-ui*" -print -quit); then
+            echo "x-ui folder found at $dbDir"
+            if [[ $dbDir == *"/opt/freedom/x-ui"* ]]; then
+                dbDir="${dbDir}/db/"
+            fi
+        else
+            echo "x-ui folder not found."
+            exit 1
+        fi
 
-elif [[ "$xmh" == "h" ]]; then
-    # Hiddify
-    if ! find /opt/hiddify-manager/hiddify-panel/ -type d -iname "backup" -print -quit; then
-        echo "پوشه بکاپ Hiddify یافت نشد."
-        exit 1
-    fi
+        if configDir=$(find /usr/local -type d -iname "x-ui*" -print -quit); then
+            echo "x-ui config folder found at $configDir"
+        else
+            echo "x-ui config folder not found."
+            exit 1
+        fi
 
-    ZIP=$(cat <<EOF
+        ZIP="zip /root/ac-backup-x.zip ${dbDir}/x-ui.db ${configDir}/config.json"
+        ;;
+
+    h)  # hiddify backup
+        ACLover="hiddify backup"
+
+        if ! find /opt/hiddify-manager/hiddify-panel/ -type d -iname "backup" -print -quit; then
+            echo "hiddify backup folder not found."
+            exit 1
+        fi
+
+        ZIP=$(cat <<EOF
 cd /opt/hiddify-manager/hiddify-panel/
 if [ \$(find /opt/hiddify-manager/hiddify-panel/backup -type f | wc -l) -gt 100 ]; then
     find /opt/hiddify-manager/hiddify-panel/backup -type f -delete
@@ -147,68 +179,75 @@ rm -f /root/ac-backup-h.zip
 zip /root/ac-backup-h.zip /opt/hiddify-manager/hiddify-panel/backup/\$latest_file
 EOF
 )
-    ACLover="Hiddify Backup"
+        ;;
 
-elif [[ "$xmh" == "n" ]]; then
-    # Marzneshin
-    if [ -d "/var/lib/marzneshin/mysql" ]; then
-        sed -i -e 's/\s*=\s*/=/' -e 's/\s*:\s*/:/' -e 's/^\s*//' /etc/opt/marzneshin/.env
-        source /etc/opt/marzneshin/.env
+    n)  # marzneshin backup
+        ACLover="marzneshin backup"
 
-        docker exec marzneshin-mysql-1 bash -c "mkdir -p /var/lib/mysql/db-backup"
-        cat > "/var/lib/marzneshin/mysql/ac-backup.sh" <<EOL
+        if dir=$(find /etc/opt /var/lib /var/lib -type d -iname "marzneshin" -print -quit); then
+            echo "Marzneshin folder found at $dir"
+        else
+            echo "Marzneshin folder not found."
+            exit 1
+        fi
+
+        if [ -d "/var/lib/marzneshin/mysql" ]; then
+            sed -i -e 's/\s*=\s*/=/' -e 's/\s*:\s*/:/' -e 's/^\s*//' /etc/opt/marzneshin/.env
+
+            docker exec marzneshin-mysql-1 bash -c "mkdir -p /var/lib/mysql/db-backup"
+            source /etc/opt/marzneshin/.env
+
+            cat > "/var/lib/marzneshin/mysql/ac-backup.sh" <<EOL
 #!/bin/bash
 USER="root"
 PASSWORD="$MYSQL_ROOT_PASSWORD"
 databases=\$(mysql -h 127.0.0.1 --user=\$USER --password=\$PASSWORD -e "SHOW DATABASES;" | tr -d "| " | grep -v Database)
 for db in \$databases; do
-    if [[ "\$db" != "information_schema" ]] && [[ "\$db" != "mysql" ]] && [[ "\$db" != "performance_schema" ]] && [[ "\$db" != "sys" ]]; then
+    if [[ "\$db" != "information_schema" ]] && [[ "\$db" != "mysql" ]] && [[ "\$db" != "performance_schema" ]] && [[ "\$db" != "sys" ]] ; then
         echo "Dumping database: \$db"
         mysqldump -h 127.0.0.1 --force --opt --user=\$USER --password=\$PASSWORD --databases \$db > /var/lib/mysql/db-backup/\$db.sql
     fi
 done
 EOL
-        chmod +x /var/lib/marzneshin/mysql/ac-backup.sh
+            chmod +x /var/lib/marzneshin/mysql/ac-backup.sh
 
-        ZIP=$(cat <<EOF
+            ZIP=$(cat <<EOF
 docker exec marzneshin-mysql-1 bash -c "/var/lib/mysql/ac-backup.sh"
-zip -r /root/ac-backup-ns.zip /etc/opt/marzneshin/* /var/lib/marzneshin/* /var/lib/marznode/* -x /var/lib/marzneshin/mysql/*
-zip -r /root/ac-backup-ns.zip /var/lib/marzneshin/mysql/db-backup/*
+zip -r /root/ac-backup-n.zip /etc/opt/marzneshin/* /var/lib/marzneshin/* /var/lib/marznode/*
+zip -r /root/ac-backup-n.zip /var/lib/marzneshin/mysql/db-backup/*
 rm -rf /var/lib/marzneshin/mysql/db-backup/*
 EOF
 )
-    else
-        ZIP="zip -r /root/ac-backup-ns.zip /etc/opt/marzneshin/* /var/lib/marzneshin/* /var/lib/marznode/*"
-    fi
+        else
+            ZIP="zip -r /root/ac-backup-n.zip ${dir}/* /var/lib/marzneshin/* /var/lib/marznode/*"
+        fi
+        ;;
 
-    ACLover="Marzneshin Backup"
+    *)
+        echo "Please choose one of x, m, h, or n only!"
+        exit 1
+        ;;
+esac
 
-else
-    echo "لطفا فقط یکی از گزینه‌های x, m, h, n را وارد کنید."
-    exit 1
-fi
+caption="${caption}\n\n${ACLover}\n<code>${IP}</code>\nCreated by @Pv_VEnZo - https://github.com/My-VEnZo/backup"
+comment=$(echo -e "$caption" | sed 's/<code>//g;s/<\/code>//g')
+comment=$(trim "$comment")
 
-trim() {
-    local var="$*"
-    var="${var#"${var%%[![:space:]]*}"}"
-    var="${var%"${var##*[![:space:]]}"}"
-    echo -n "$var"
-}
-
-IP=$(ip route get 1 | sed -n 's/^.*src \([0-9.]*\) .*$/\1/p')
-caption="${caption}\n\n${ACLover}\n<code>${IP}</code>\nCreated by @AC_Lover - https://github.com/AC-Lover"
-
-# ساخت فایل اسکریپت بکاپ
-cat > "/root/ac-backup-$xmh.sh" <<EOF
+# ساخت اسکریپت اصلی بکاپ
+cat > "/root/ac-backup-${xmh}.sh" <<EOL
 #!/bin/bash
+rm -f /root/ac-backup-${xmh}.zip
 $ZIP
-EOF
+echo -e "$comment" | zip -z /root/ac-backup-${xmh}.zip
+curl -F chat_id="${chatid}" -F caption=\$'${caption}' -F parse_mode="HTML" -F document=@"/root/ac-backup-${xmh}.zip" https://api.telegram.org/bot${tk}/sendDocument
+EOL
 
-chmod +x "/root/ac-backup-$xmh.sh"
+chmod +x "/root/ac-backup-${xmh}.sh"
 
 # اضافه کردن کرونجاب
-(crontab -l 2>/dev/null; echo "$cron_time root /root/ac-backup-$xmh.sh && curl -s -X POST https://api.telegram.org/bot$tk/sendDocument -F chat_id=$chatid -F document=@/root/ac-backup-$xmh.zip -F caption='$caption'") | crontab -
+(crontab -l 2>/dev/null; echo "${cron_time} /bin/bash /root/ac-backup-${xmh}.sh >/dev/null 2>&1") | crontab -
 
-echo "کرونجاب با موفقیت اضافه شد."
-echo "اسکریپت بکاپ در /root/ac-backup-$xmh.sh ساخته شد."
-echo "بکاپ با عنوان $ACLover آماده می‌شود."
+# اجرای اولیه اسکریپت بکاپ
+bash "/root/ac-backup-${xmh}.sh"
+
+echo -e "\nDone\n"
