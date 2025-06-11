@@ -33,7 +33,7 @@
 <p align="left">First, you run this command on your server<br><br></p> 
 
 ```bash
-bash <(curl -Ls https://github.com/My-VEnZo/backup.sh)
+bash <(curl -Ls https://github.com/My-VEnZo/backup/blob/main/backup.sh)
 ``` 
 
 ###
