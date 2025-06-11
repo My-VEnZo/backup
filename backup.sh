@@ -212,7 +212,7 @@ EOL
             chmod +x /var/lib/marzneshin/mysql/ac-backup.sh
 
             ZIP=$(cat <<EOF
-docker exec marzneshin-mysql-1 bash -c "/var/lib/mysql/ac-backup.sh"
+docker exec marzneshin-db-1 bash -c "/var/lib/mysql/ac-backup.sh"
 zip -r /root/ac-backup-n.zip /etc/opt/marzneshin/* /var/lib/marzneshin/* /var/lib/marznode/*
 zip -r /root/ac-backup-n.zip /var/lib/marzneshin/mysql/db-backup/*
 rm -rf /var/lib/marzneshin/mysql/db-backup/*
