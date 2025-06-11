@@ -184,7 +184,7 @@ EOF
     n)  # marzneshin backup
         ACLover="marzneshin backup"
 
-        if dir=$(find /etc/opt /var/lib /var/lib -type d -iname "marzneshin" -print -quit); then
+        if dir=$(find /etc/opt /var/lib -type d -iname "marzneshin" -print -quit); then
             echo "Marzneshin folder found at $dir"
         else
             echo "Marzneshin folder not found."
@@ -238,16 +238,14 @@ cat > "/root/ac-backup-${xmh}.sh" <<EOL
 #!/bin/bash
 rm -f /root/ac-backup-${xmh}.zip
 $ZIP
-echo -e "$comment" | zip -z /root/ac-backup-${xmh}.zip
-curl -F chat_id="${chatid}" -F caption=\$'${caption}' -F parse_mode="HTML" -F document=@"/root/ac-backup-${xmh}.zip" https://api.telegram.org/bot${tk}/sendDocument
+echo -e "$comment"
+curl -s "https://api.telegram.org/bot$tk/sendDocument" -F chat_id=$chatid -F document="@/root/ac-backup-${xmh}.zip" -F caption="$caption" -F parse_mode="HTML"
+rm -f /root/ac-backup-${xmh}.zip
 EOL
 
 chmod +x "/root/ac-backup-${xmh}.sh"
 
-# اضافه کردن کرونجاب
-(crontab -l 2>/dev/null; echo "${cron_time} /bin/bash /root/ac-backup-${xmh}.sh >/dev/null 2>&1") | crontab -
+# تنظیم کرونجاب
+(crontab -l 2>/dev/null; echo "$cron_time /root/ac-backup-${xmh}.sh") | crontab -
 
-# اجرای اولیه اسکریپت بکاپ
-bash "/root/ac-backup-${xmh}.sh"
-
-echo -e "\nDone\n"
+echo "Cronjob set for $cron_time to run /root/ac-backup-${xmh}.sh"
