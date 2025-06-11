@@ -50,7 +50,7 @@ done
 
 # انتخاب نوع پنل بکاپ
 while [[ -z "$xmh" ]]; do
-    echo "Choose backup panel: x-ui, marzban, hiddify, or marzneshin? [x/m/h/n] : "
+    echo "x-ui or marzban or hiddify or marzneshin? [x/m/h/n] : "
     read -r xmh
     if [[ $xmh == $'\0' ]]; then
         echo "Invalid input. Please choose x, m, h or n."
@@ -61,6 +61,7 @@ while [[ -z "$xmh" ]]; do
     fi
 done
 
+# پاک‌کردن کرونجاب‌های قبلی اگر خواسته شد
 while [[ -z "$crontabs" ]]; do
     echo "Would you like the previous crontabs to be cleared? [y/n] : "
     read -r crontabs
@@ -184,7 +185,7 @@ EOF
     n)  # marzneshin backup
         ACLover="marzneshin backup"
 
-        if dir=$(find /etc/opt /var/lib /var/lib -type d -iname "marzneshin" -print -quit); then
+        if dir=$(find /etc/opt /var/lib -type d -iname "marzneshin" -print -quit); then
             echo "Marzneshin folder found at $dir"
         else
             echo "Marzneshin folder not found."
@@ -213,65 +214,36 @@ EOL
 
             ZIP=$(cat <<EOF
 docker exec marzneshin-db-1 bash -c "/var/lib/mysql/ac-backup.sh"
-zip -r /root/ac-backup-n.zip /etc/opt/marzneshin/* /var/lib/marzneshin/* /var/lib/marznode/*
+zip -r /root/ac-backup-n.zip /etc/opt/marzneshin/* /var/lib/marzneshin/* /etc/opt/marzneshin/.env -x /var/lib/marzneshin/mysql/\*
 zip -r /root/ac-backup-n.zip /var/lib/marzneshin/mysql/db-backup/*
 rm -rf /var/lib/marzneshin/mysql/db-backup/*
 EOF
 )
         else
-            ZIP="zip -r /root/ac-backup-n.zip ${dir}/* /var/lib/marzneshin/* /var/lib/marznode/*"
+            ZIP="zip -r /root/ac-backup-n.zip ${dir}/* /var/lib/marzneshin/* /etc/opt/marzneshin/.env"
         fi
         ;;
 
     *)
-        echo "Invalid option"
+        echo "Invalid selection."
         exit 1
         ;;
 esac
 
-echo "Running backup for $ACLover"
+# اجرای دستورات بکاپ و ساخت فایل ZIP
+bash -c "$ZIP"
 
-# ایجاد اسکریپت بکاپ
-case "$xmh" in
-    m)
-        cat > /root/ac-backup-m.sh <<EOF
-#!/bin/bash
-$ZIP
-curl -s -X POST https://api.telegram.org/bot$tk/sendDocument -F chat_id=$chatid -F document=@/root/ac-backup-m.zip -F caption="$caption - $IP"
-EOF
-        chmod +x /root/ac-backup-m.sh
-        BACKUP_SCRIPT="/root/ac-backup-m.sh"
-        ;;
-    x)
-        cat > /root/ac-backup-x.sh <<EOF
-#!/bin/bash
-$ZIP
-curl -s -X POST https://api.telegram.org/bot$tk/sendDocument -F chat_id=$chatid -F document=@/root/ac-backup-x.zip -F caption="$caption - $IP"
-EOF
-        chmod +x /root/ac-backup-x.sh
-        BACKUP_SCRIPT="/root/ac-backup-x.sh"
-        ;;
-    h)
-        cat > /root/ac-backup-h.sh <<EOF
-#!/bin/bash
-$ZIP
-curl -s -X POST https://api.telegram.org/bot$tk/sendDocument -F chat_id=$chatid -F document=@/root/ac-backup-h.zip -F caption="$caption - $IP"
-EOF
-        chmod +x /root/ac-backup-h.sh
-        BACKUP_SCRIPT="/root/ac-backup-h.sh"
-        ;;
-    n)
-        cat > /root/ac-backup-n.sh <<EOF
-#!/bin/bash
-$ZIP
-curl -s -X POST https://api.telegram.org/bot$tk/sendDocument -F chat_id=$chatid -F document=@/root/ac-backup-n.zip -F caption="$caption - $IP"
-EOF
-        chmod +x /root/ac-backup-n.sh
-        BACKUP_SCRIPT="/root/ac-backup-n.sh"
-        ;;
-esac
+# ارسال فایل بکاپ به تلگرام
+if [ -f /root/ac-backup-${xmh}.zip ]; then
+    curl -s -X POST "https://api.telegram.org/bot${tk}/sendDocument" \
+        -F chat_id="${chatid}" \
+        -F document=@"root/ac-backup-${xmh}.zip" \
+        -F caption="${caption} | ${ACLover} | ${IP}" >/dev/null
+else
+    echo "Backup file not found!"
+fi
 
-# اضافه کردن کرونجاب
-(crontab -l 2>/dev/null; echo "$cron_time $BACKUP_SCRIPT") | crontab -
+# افزودن کرونجاب
+(crontab -l 2>/dev/null; echo "${cron_time} /root/ac-backup-${xmh}.sh") | sort - | uniq - | crontab -
 
-echo "Cronjob set for $cron_time to run $BACKUP_SCRIPT"
+echo "Cronjob set for ${cron_time} to run /root/ac-backup-${xmh}.sh"
